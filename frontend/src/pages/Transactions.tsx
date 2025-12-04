@@ -381,7 +381,7 @@ export function Transactions() {
                     <span className={`font-medium ${
                       transaction.amount < 0 ? 'text-destructive' : 'text-green-600'
                     }`}>
-                      {transaction.amount < 0 ? '-' : '+'}${Math.abs(transaction.amount).toFixed(2)}
+                      {transaction.amount < 0 ? '-' : '+'}₹{Math.abs(transaction.amount).toFixed(2)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

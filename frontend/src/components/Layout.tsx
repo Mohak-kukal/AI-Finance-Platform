@@ -91,7 +91,15 @@ export function Layout() {
             <Button
               variant="ghost"
               className="w-full justify-start"
-              onClick={() => signOut()}
+              onClick={() => {
+                // Clear user-specific sessionStorage data before signing out
+                sessionStorage.removeItem('insights_advice')
+                sessionStorage.removeItem('insights_predictions')
+                sessionStorage.removeItem('insights_prediction_month')
+                sessionStorage.removeItem('insights_prediction_year')
+                sessionStorage.removeItem('insights_user_id')
+                signOut()
+              }}
             >
               <LogOut className="h-4 w-4 mr-2" />
               Sign out

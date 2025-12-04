@@ -237,10 +237,10 @@ class AdviceService:
         {json.dumps(analysis_data['predictions'], indent=2)}
 
         SPENDING SUMMARY:
-        - Current Month Total: ${analysis_data['total_current_spending']:.2f}
-        - {period_months}-Month Total: ${analysis_data.get('total_three_month_spending', 0):.2f}
-        - Average Monthly Spending: ${analysis_data.get('average_monthly_spending', 0):.2f}
-        - Predicted Next Month: ${analysis_data['total_predicted_spending']:.2f}
+        - Current Month Total: ₹{analysis_data['total_current_spending']:.2f}
+        - {period_months}-Month Total: ₹{analysis_data.get('total_three_month_spending', 0):.2f}
+        - Average Monthly Spending: ₹{analysis_data.get('average_monthly_spending', 0):.2f}
+        - Predicted Next Month: ₹{analysis_data['total_predicted_spending']:.2f}
 
         Please provide:
         1. A brief summary of their financial situation over the last {period_months} months, highlighting trends and patterns
@@ -401,8 +401,8 @@ class AdviceService:
         """Generate specific advice for a spending category"""
         try:
             prompt = f"""
-            Provide specific financial advice for someone who spent ${spending_amount:.2f} on {category}.
-            {"Their budget limit for this category is $" + str(budget_limit) + "." if budget_limit else ""}
+            Provide specific financial advice for someone who spent ₹{spending_amount:.2f} on {category}.
+            {"Their budget limit for this category is ₹" + str(budget_limit) + "." if budget_limit else ""}
             
             Give 2-3 specific, actionable recommendations for this category.
             Format as JSON: {{"recommendations": ["advice1", "advice2", "advice3"]}}

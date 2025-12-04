@@ -23,6 +23,7 @@ export function Budgets() {
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear()
   })
+  const [budgetType, setBudgetType] = useState<'category' | 'monthly'>('category')
 
   useEffect(() => {
     loadBudgets()
@@ -43,11 +44,12 @@ export function Budgets() {
     }
   }
 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     
-    if (!formData.category) {
+    if (budgetType === 'category' && !formData.category) {
       setError('Please select a category')
       return
     }
@@ -58,11 +60,17 @@ export function Budgets() {
     }
     
     try {
+      // For monthly budgets, use 'monthly' as the category
+      const category = budgetType === 'monthly' ? 'monthly' : formData.category
+      
       if (editingBudget) {
-        await apiClient.updateBudget(editingBudget.id, formData)
+        await apiClient.updateBudget(editingBudget.id, {
+          ...formData,
+          category
+        })
       } else {
         await apiClient.createBudget({
-          category: formData.category,
+          category,
           limit_amount: formData.limit_amount,
           month: formData.month,
           year: formData.year
@@ -71,6 +79,7 @@ export function Budgets() {
       setShowForm(false)
       setEditingBudget(null)
       setError(null)
+      setBudgetType('category')
       setFormData({
         category: '',
         limit_amount: 0,
@@ -87,8 +96,10 @@ export function Budgets() {
 
   const handleEdit = (budget: Budget) => {
     setEditingBudget(budget)
+    const isMonthly = budget.category === 'monthly'
+    setBudgetType(isMonthly ? 'monthly' : 'category')
     setFormData({
-      category: budget.category,
+      category: isMonthly ? '' : budget.category,
       limit_amount: budget.limit_amount,
       month: budget.month,
       year: budget.year
@@ -161,7 +172,9 @@ export function Budgets() {
                     <Target className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground capitalize">{analysis.category}</h3>
+                    <h3 className="font-semibold text-foreground capitalize">
+                      {analysis.category === 'monthly' ? 'Monthly Budget' : analysis.category}
+                    </h3>
                     <p className="text-sm text-muted-foreground">
                       {new Date(analysis.year, analysis.month - 1).toLocaleDateString('en-US', { 
                         month: 'long', 
@@ -176,18 +189,23 @@ export function Budgets() {
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Spent</span>
-                  <span className="font-medium text-foreground">${Number(analysis.spent || 0).toFixed(2)}</span>
+                  <span className="font-medium text-foreground">₹{Number(analysis.spent || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Budget</span>
-                  <span className="font-medium text-foreground">${Number(analysis.limit_amount || 0).toFixed(2)}</span>
+                  <span className="font-medium text-foreground">₹{Number(analysis.limit_amount || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Remaining</span>
+                  <span className="text-muted-foreground">
+                    {Number(analysis.remaining || 0) < 0 ? 'Exceeded by' : 'Remaining'}
+                  </span>
                   <span className={`font-medium ${
                     Number(analysis.remaining || 0) < 0 ? 'text-destructive' : 'text-green-600'
                   }`}>
-                    ${Number(analysis.remaining || 0).toFixed(2)}
+                    {Number(analysis.remaining || 0) < 0 
+                      ? `₹${Math.abs(Number(analysis.remaining || 0)).toFixed(2)}`
+                      : `₹${Number(analysis.remaining || 0).toFixed(2)}`
+                    }
                   </span>
                 </div>
                 
@@ -277,11 +295,47 @@ export function Budgets() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select
-                value={formData.category || undefined}
-                onValueChange={(value) => setFormData({ ...formData, category: value })}
-              >
+              <Label>Budget Type</Label>
+              <div className="flex space-x-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="budgetType"
+                    value="category"
+                    checked={budgetType === 'category'}
+                    onChange={(e) => {
+                      setBudgetType('category')
+                      setFormData(prev => ({ ...prev, category: '' }))
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">Category Budget</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="budgetType"
+                    value="monthly"
+                    checked={budgetType === 'monthly'}
+                    onChange={(e) => {
+                      setBudgetType('monthly')
+                      setFormData(prev => ({ ...prev, category: '' }))
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">Monthly Budget</span>
+                </label>
+              </div>
+            </div>
+            {budgetType === 'category' && (
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={formData.category || undefined}
+                  onValueChange={(value) => {
+                    setFormData({ ...formData, category: value })
+                  }}
+                >
                 <SelectTrigger id="category">
                   <SelectValue placeholder="Select Category" />
                 </SelectTrigger>
@@ -299,6 +353,7 @@ export function Budgets() {
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="limit">Limit Amount</Label>
               <Input
@@ -322,7 +377,10 @@ export function Budgets() {
                 <Label htmlFor="month">Month</Label>
                 <Select
                   value={String(formData.month)}
-                  onValueChange={(value) => setFormData({ ...formData, month: parseInt(value) })}
+                  onValueChange={(value) => {
+                    const newMonth = parseInt(value)
+                    setFormData({ ...formData, month: newMonth })
+                  }}
                 >
                   <SelectTrigger id="month">
                     <SelectValue />
@@ -340,7 +398,10 @@ export function Budgets() {
                 <Label htmlFor="year">Year</Label>
                 <Select
                   value={String(formData.year)}
-                  onValueChange={(value) => setFormData({ ...formData, year: parseInt(value) })}
+                  onValueChange={(value) => {
+                    const newYear = parseInt(value)
+                    setFormData({ ...formData, year: newYear })
+                  }}
                 >
                   <SelectTrigger id="year">
                     <SelectValue />
@@ -367,6 +428,7 @@ export function Budgets() {
                   setShowForm(false)
                   setEditingBudget(null)
                   setError(null)
+                  setBudgetType('category')
                   setFormData({
                     category: '',
                     limit_amount: 0,

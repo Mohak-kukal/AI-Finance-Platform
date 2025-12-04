@@ -138,7 +138,7 @@ export function Accounts() {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Total Balance</p>
-              <p className="text-3xl font-bold text-foreground">${Number(totalBalance || 0).toFixed(2)}</p>
+              <p className="text-3xl font-bold text-foreground">₹{Number(totalBalance || 0).toFixed(2)}</p>
             </div>
           </div>
         </CardContent>
@@ -177,7 +177,7 @@ export function Accounts() {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-foreground">${Number((account as any).balance || 0).toFixed(2)}</p>
+                <p className="text-2xl font-bold text-foreground">₹{Number((account as any).balance || 0).toFixed(2)}</p>
                 <p className="text-sm text-muted-foreground">
                   Created {new Date(account.created_at).toLocaleDateString()}
                 </p>

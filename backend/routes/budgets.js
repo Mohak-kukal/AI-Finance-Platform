@@ -40,6 +40,8 @@ router.post('/', authenticateToken, [
     const { category, limit_amount, month, year } = req.body;
 
     // Check if budget already exists for this category/month/year
+    // For monthly budgets, only one monthly budget per month/year
+    // For category budgets, only one budget per category/month/year
     const existingBudget = await db('budgets')
       .where({
         user_id: req.user.userId,
@@ -50,7 +52,10 @@ router.post('/', authenticateToken, [
       .first();
 
     if (existingBudget) {
-      return res.status(400).json({ error: 'Budget already exists for this category and period' });
+      const errorMsg = category === 'monthly' 
+        ? 'Monthly budget already exists for this period'
+        : 'Budget already exists for this category and period';
+      return res.status(400).json({ error: errorMsg });
     }
 
     const [budget] = await db('budgets').insert({
@@ -161,10 +166,29 @@ router.get('/analysis', authenticateToken, async (req, res) => {
       .where('amount', '<', 0) // Only expenses
       .groupBy('category');
 
+    // Get total monthly spending (for monthly budgets)
+    const totalMonthlySpending = await db('transactions')
+      .sum('amount as total')
+      .where('user_id', req.user.userId)
+      .whereBetween('date', [startDate, endDate])
+      .where('amount', '<', 0) // Only expenses
+      .first();
+
+    const totalSpent = totalMonthlySpending ? Math.abs(totalMonthlySpending.total || 0) : 0;
+
     // Combine budgets with actual spending
     const analysis = budgets.map(budget => {
-      const actualSpending = spending.find(s => s.category === budget.category);
-      const spent = actualSpending ? Math.abs(actualSpending.total) : 0;
+      let spent = 0;
+      
+      if (budget.category === 'monthly') {
+        // For monthly budgets, use total spending
+        spent = totalSpent;
+      } else {
+        // For category budgets, use category-specific spending
+        const actualSpending = spending.find(s => s.category === budget.category);
+        spent = actualSpending ? Math.abs(actualSpending.total) : 0;
+      }
+      
       const remaining = budget.limit_amount - spent;
       const percentage = (spent / budget.limit_amount) * 100;
 

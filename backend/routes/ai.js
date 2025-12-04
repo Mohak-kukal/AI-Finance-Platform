@@ -248,6 +248,12 @@ router.post('/advice/stream', authenticateToken, async (req, res) => {
     const currentMonth = month || new Date().getMonth() + 1;
     const currentYear = year || new Date().getFullYear();
 
+    // Set headers for Server-Sent Events at the very beginning
+    // This ensures headers are set before any response is written
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     // Check total transaction count first
     const totalTransactions = await db('transactions')
       .where('user_id', req.user.userId)
@@ -257,7 +263,7 @@ router.post('/advice/stream', authenticateToken, async (req, res) => {
 
     const MIN_TRANSACTIONS = 10;
     if (parseInt(totalTransactions.count) < MIN_TRANSACTIONS) {
-      return res.json({
+      const insufficientDataResponse = {
         summary: `We need at least ${MIN_TRANSACTIONS} transactions to provide personalized financial advice. You currently have ${totalTransactions.count} transaction${totalTransactions.count !== 1 ? 's' : ''}.`,
         concerns: [],
         recommendations: [],
@@ -266,7 +272,12 @@ router.post('/advice/stream', authenticateToken, async (req, res) => {
         insufficient_data: true,
         current_count: parseInt(totalTransactions.count),
         required_count: MIN_TRANSACTIONS
-      });
+      };
+      
+      // Send as SSE complete message
+      res.write(`data: ${JSON.stringify({ type: 'complete', advice: insufficientDataResponse })}\n\n`);
+      res.end();
+      return;
     }
 
     // Get spending data for the last 3 months
@@ -333,11 +344,6 @@ router.post('/advice/stream', authenticateToken, async (req, res) => {
       user_id: req.user.userId,
       analysis_period_months: 3
     };
-
-    // Set headers for Server-Sent Events
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
 
     // Proxy the stream from ML service
     try {

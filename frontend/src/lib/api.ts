@@ -228,10 +228,27 @@ class ApiClient {
       body: JSON.stringify(params || {}),
     })
 
+    // Check content type - might be JSON if insufficient data
+    const contentType = response.headers.get('content-type') || ''
+    
     if (!response.ok) {
       const errorText = await response.text()
       onError(`HTTP error! status: ${response.status} - ${errorText}`)
       return
+    }
+
+    // If response is JSON (not SSE), handle it directly
+    if (contentType.includes('application/json')) {
+      try {
+        const jsonData = await response.json()
+        // Handle both direct advice object and wrapped response
+        const adviceData = jsonData.advice || jsonData
+        onComplete(adviceData)
+        return
+      } catch (e) {
+        onError('Failed to parse JSON response')
+        return
+      }
     }
 
     const reader = response.body?.getReader()
@@ -247,7 +264,23 @@ class ApiClient {
       while (true) {
         const { done, value } = await reader.read()
         
-        if (done) break
+        if (done) {
+          // If we have remaining buffer, try to parse it
+          if (buffer.trim()) {
+            try {
+              // Try to parse as JSON if it looks like JSON
+              if (buffer.trim().startsWith('{')) {
+                const jsonData = JSON.parse(buffer.trim())
+                const adviceData = jsonData.advice || jsonData
+                onComplete(adviceData)
+                return
+              }
+            } catch (e) {
+              // Not JSON, continue with SSE parsing
+            }
+          }
+          break
+        }
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
@@ -270,6 +303,17 @@ class ApiClient {
               }
             } catch (e) {
               console.warn('Failed to parse SSE data:', e, line)
+            }
+          } else if (line.trim() && line.trim().startsWith('{')) {
+            // Handle case where JSON is sent without 'data: ' prefix
+            try {
+              const data = JSON.parse(line.trim())
+              if (data.insufficient_data || data.summary) {
+                onComplete(data)
+                return
+              }
+            } catch (e) {
+              // Not valid JSON, continue
             }
           }
         }

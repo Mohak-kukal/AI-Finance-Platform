@@ -195,7 +195,7 @@ class OCRService:
         # Clean total amount
         if "total_amount" in data:
             try:
-                amount = float(str(data["total_amount"]).replace("$", "").replace(",", ""))
+                amount = float(str(data["total_amount"]).replace("₹", "").replace("$", "").replace(",", "").replace("rs", "").replace("RS", "").replace("Rs", ""))
                 cleaned["total_amount"] = abs(amount)  # Make sure it's positive
             except ValueError:
                 cleaned["total_amount"] = 0.0
@@ -210,7 +210,7 @@ class OCRService:
                         cleaned_item["description"] = str(item["description"]).strip()
                     if "amount" in item:
                         try:
-                            amount = float(str(item["amount"]).replace("$", "").replace(",", ""))
+                            amount = float(str(item["amount"]).replace("₹", "").replace("$", "").replace(",", "").replace("rs", "").replace("RS", "").replace("Rs", ""))
                             cleaned_item["amount"] = abs(amount)
                         except ValueError:
                             cleaned_item["amount"] = 0.0
@@ -264,9 +264,9 @@ class OCRService:
         
         # Extract total amount
         amount_patterns = [
-            r"total[:\s]+(?:rs\.?\s*)?\$?([\d,]+\.?\d*)",
-            r"amount[:\s]+(?:rs\.?\s*)?\$?([\d,]+\.?\d*)",
-            r"\$([\d,]+\.?\d*)",
+            r"total[:\s]+(?:rs\.?\s*|₹\s*|\$\s*)?([\d,]+\.?\d*)",
+            r"amount[:\s]+(?:rs\.?\s*|₹\s*|\$\s*)?([\d,]+\.?\d*)",
+            r"[₹$]([\d,]+\.?\d*)",
             r"rs\.?\s*([\d,]+\.?\d*)"
         ]
         

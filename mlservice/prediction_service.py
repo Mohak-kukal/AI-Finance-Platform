@@ -231,6 +231,17 @@ class PredictionService:
             df['month'] = df['date'].dt.month
             df['year'] = df['date'].dt.year
             
+            # Convert amount to numeric (handle string values)
+            df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+            # Drop rows with invalid amounts
+            df = df.dropna(subset=['amount'])
+            
+            # Ensure category is a string and fill missing values
+            if 'category' in df.columns:
+                df['category'] = df['category'].fillna('other').astype(str)
+            else:
+                df['category'] = 'other'
+            
             # Filter for expenses only (negative amounts)
             df = df[df['amount'] < 0]
             df['amount'] = df['amount'].abs()  # Make positive for prediction
@@ -354,6 +365,17 @@ class PredictionService:
             df['date'] = pd.to_datetime(df['date'])
             df['month'] = df['date'].dt.month
             df['year'] = df['date'].dt.year
+            
+            # Convert amount to numeric (handle string values)
+            df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+            # Drop rows with invalid amounts
+            df = df.dropna(subset=['amount'])
+            
+            # Ensure category is a string and fill missing values
+            if 'category' in df.columns:
+                df['category'] = df['category'].fillna('other').astype(str)
+            else:
+                df['category'] = 'other'
             
             # Filter for expenses only
             df = df[df['amount'] < 0]

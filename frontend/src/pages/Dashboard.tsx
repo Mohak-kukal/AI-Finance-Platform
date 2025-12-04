@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { 
   DollarSign, 
@@ -12,8 +12,6 @@ import {
   PieChart, 
   Pie, 
   Cell, 
-  BarChart, 
-  Bar, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -120,7 +118,10 @@ export function Dashboard() {
     .filter(trend => trend.total < 0) // Only include months with expenses
     .map(trend => {
       // Handle different date formats from database
-      const date = trend.month instanceof Date ? trend.month : new Date(trend.month)
+      const monthValue = trend.month as any
+      const date = monthValue instanceof Date 
+        ? monthValue 
+        : new Date(monthValue)
       return {
         month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
         amount: Math.abs(Number(trend.total))
@@ -165,7 +166,7 @@ export function Dashboard() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-muted-foreground">Total Balance</p>
-                <p className="text-2xl font-bold text-foreground">${Number(totalBalance || 0).toFixed(2)}</p>
+                <p className="text-2xl font-bold text-foreground">₹{Number(totalBalance || 0).toFixed(2)}</p>
               </div>
             </div>
           </CardContent>
@@ -179,7 +180,7 @@ export function Dashboard() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-muted-foreground">Monthly Spending</p>
-                <p className="text-2xl font-bold text-foreground">${monthlySpending.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-foreground">₹{monthlySpending.toFixed(2)}</p>
               </div>
             </div>
           </CardContent>
@@ -242,12 +243,12 @@ export function Dashboard() {
                     fill={chartColors[0]}
                     dataKey="value"
                   >
-                    {spendingByCategory.map((entry, index) => (
+                    {spendingByCategory.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value) => [`$${Number(value).toFixed(2)}`, 'Amount']}
+                    formatter={(value) => [`₹${Number(value).toFixed(2)}`, 'Amount']}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--popover))',
                       border: '1px solid hsl(var(--border))',
@@ -298,7 +299,7 @@ export function Dashboard() {
                     tick={{ fill: 'hsl(var(--muted-foreground))' }}
                   />
                   <Tooltip 
-                    formatter={(value) => [`$${Number(value).toFixed(2)}`, 'Amount']}
+                    formatter={(value) => [`₹${Number(value).toFixed(2)}`, 'Amount']}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--popover))',
                       border: '1px solid hsl(var(--border))',
@@ -350,9 +351,9 @@ export function Dashboard() {
                     </Badge>
                   </div>
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <span>Spent: ${Number(budget.spent || 0).toFixed(2)}</span>
-                    <span>Budget: ${Number(budget.limit_amount || 0).toFixed(2)}</span>
-                    <span>Remaining: ${Number(budget.remaining || 0).toFixed(2)}</span>
+                    <span>Spent: ₹{Number(budget.spent || 0).toFixed(2)}</span>
+                    <span>Budget: ₹{Number(budget.limit_amount || 0).toFixed(2)}</span>
+                    <span>Remaining: ₹{Number(budget.remaining || 0).toFixed(2)}</span>
                   </div>
                   <div className="mt-2 bg-secondary rounded-full h-2">
                     <div
@@ -401,7 +402,7 @@ export function Dashboard() {
                   <p className={`font-medium ${
                     transaction.amount < 0 ? 'text-destructive' : 'text-green-600'
                   }`}>
-                    {transaction.amount < 0 ? '-' : '+'}${Math.abs(transaction.amount).toFixed(2)}
+                    {transaction.amount < 0 ? '-' : '+'}₹{Math.abs(transaction.amount).toFixed(2)}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {new Date(transaction.date).toLocaleDateString()}

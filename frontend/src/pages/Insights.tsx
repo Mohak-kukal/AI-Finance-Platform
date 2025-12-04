@@ -3,7 +3,6 @@ import {
   Brain,
   AlertCircle,
   CheckCircle,
-  Info,
   RefreshCw
 } from 'lucide-react'
 import { 
@@ -22,41 +21,89 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getChartColors } from '@/lib/chart-colors'
 import { useTheme } from '@/components/ThemeProvider'
+import { useUser } from '@clerk/clerk-react'
 
 export function Insights() {
   const [insights, setInsights] = useState<InsightsData | null>(null)
   const [aiAdvice, setAiAdvice] = useState<AIAdvice | null>(null)
   const [predictions, setPredictions] = useState<Prediction[]>([])
+  const [predictionMonth, setPredictionMonth] = useState<number | null>(null)
+  const [predictionYear, setPredictionYear] = useState<number | null>(null)
+  const [predictionInsufficientData, setPredictionInsufficientData] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [adviceLoading, setAdviceLoading] = useState(false)
   const [predictionsLoading, setPredictionsLoading] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState(6)
   const { theme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const { user } = useUser()
   
   useEffect(() => {
     setMounted(true)
     
-    // Restore advice and predictions from sessionStorage
-    const savedAdvice = sessionStorage.getItem('insights_advice')
-    const savedPredictions = sessionStorage.getItem('insights_predictions')
+    // Get current user ID
+    const currentUserId = user?.id || null
     
-    if (savedAdvice) {
-      try {
-        setAiAdvice(JSON.parse(savedAdvice))
-      } catch (e) {
-        console.warn('Failed to restore advice:', e)
-      }
+    // Check if stored data belongs to current user
+    const storedUserId = sessionStorage.getItem('insights_user_id')
+    
+    // If user changed or no user ID stored, clear old data
+    if (currentUserId && storedUserId && storedUserId !== currentUserId) {
+      sessionStorage.removeItem('insights_advice')
+      sessionStorage.removeItem('insights_predictions')
+      sessionStorage.removeItem('insights_prediction_month')
+      sessionStorage.removeItem('insights_prediction_year')
+      setAiAdvice(null)
+      setPredictions([])
+      setPredictionMonth(null)
+      setPredictionYear(null)
+      setPredictionInsufficientData(null)
     }
     
-    if (savedPredictions) {
-      try {
-        setPredictions(JSON.parse(savedPredictions))
-      } catch (e) {
-        console.warn('Failed to restore predictions:', e)
+    // Only restore data if it belongs to current user
+    if (currentUserId && (!storedUserId || storedUserId === currentUserId)) {
+      const savedAdvice = sessionStorage.getItem('insights_advice')
+      const savedPredictions = sessionStorage.getItem('insights_predictions')
+      
+      if (savedAdvice) {
+        try {
+          setAiAdvice(JSON.parse(savedAdvice))
+        } catch (e) {
+          console.warn('Failed to restore advice:', e)
+        }
       }
+      
+      if (savedPredictions) {
+        try {
+          setPredictions(JSON.parse(savedPredictions))
+          // Restore month and year from sessionStorage
+          const savedMonth = sessionStorage.getItem('insights_prediction_month')
+          const savedYear = sessionStorage.getItem('insights_prediction_year')
+          if (savedMonth) setPredictionMonth(parseInt(savedMonth, 10))
+          if (savedYear) setPredictionYear(parseInt(savedYear, 10))
+        } catch (e) {
+          console.warn('Failed to restore predictions:', e)
+        }
+      }
+      
+      // Store current user ID
+      if (currentUserId) {
+        sessionStorage.setItem('insights_user_id', currentUserId)
+      }
+    } else if (!currentUserId) {
+      // No user logged in, clear all data
+      sessionStorage.removeItem('insights_advice')
+      sessionStorage.removeItem('insights_predictions')
+      sessionStorage.removeItem('insights_prediction_month')
+      sessionStorage.removeItem('insights_prediction_year')
+      sessionStorage.removeItem('insights_user_id')
+      setAiAdvice(null)
+      setPredictions([])
+      setPredictionMonth(null)
+      setPredictionYear(null)
+      setPredictionInsufficientData(null)
     }
-  }, [])
+  }, [user?.id])
   
   const isDark = mounted && (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches))
   const chartColors = getChartColors(isDark)
@@ -213,8 +260,11 @@ export function Insights() {
             setAiAdvice(adviceData)
             setStreamingText('') // Clear streaming text
             setStreamingAdvice(null)
-            // Save to sessionStorage
-            sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+            // Save to sessionStorage with user ID
+            if (user?.id) {
+              sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+              sessionStorage.setItem('insights_user_id', user.id)
+            }
             setAdviceLoading(false)
           },
           // onError - fallback to non-streaming
@@ -230,7 +280,10 @@ export function Insights() {
               if (adviceRes) {
                 const adviceData = (adviceRes as any).advice || adviceRes
                 setAiAdvice(adviceData)
-                sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+                if (user?.id) {
+                  sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+                  sessionStorage.setItem('insights_user_id', user.id)
+                }
               } else {
                 setAiAdvice(null)
                 sessionStorage.removeItem('insights_advice')
@@ -257,7 +310,10 @@ export function Insights() {
         if (adviceRes) {
           const adviceData = (adviceRes as any).advice || adviceRes
           setAiAdvice(adviceData)
-          sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+          if (user?.id) {
+            sessionStorage.setItem('insights_advice', JSON.stringify(adviceData))
+            sessionStorage.setItem('insights_user_id', user.id)
+          }
         } else {
           setAiAdvice(null)
           sessionStorage.removeItem('insights_advice')
@@ -289,23 +345,66 @@ export function Insights() {
         // Check if it's an error response with insufficient_data
         if (predictionsRes.insufficient_data === true || (predictionsRes.predictions && predictionsRes.predictions.length === 0 && predictionsRes.insufficient_data)) {
           setPredictions([])
+          setPredictionMonth(null)
+          setPredictionYear(null)
+          setPredictionInsufficientData(predictionsRes.message || 'Insufficient data for predictions. Please add at least 15 transactions to enable AI predictions.')
           sessionStorage.removeItem('insights_predictions')
         } else if (predictionsRes.predictions && Array.isArray(predictionsRes.predictions)) {
           setPredictions(predictionsRes.predictions)
-          // Save to sessionStorage
-          sessionStorage.setItem('insights_predictions', JSON.stringify(predictionsRes.predictions))
+          setPredictionInsufficientData(null) // Clear insufficient data message
+          // Extract month and year from response metadata or calculate 2 months ahead
+          let month = (predictionsRes as any).target_month
+          let year = (predictionsRes as any).target_year
+          
+          if (!month || !year) {
+            // Calculate 2 months ahead from current date, handling year wrapping
+            const now = new Date()
+            const currentMonth = now.getMonth() // 0-11 (0-based)
+            const currentYear = now.getFullYear()
+            const monthsAhead = 2
+            
+            // Calculate target month (0-based)
+            const targetMonth0Based = currentMonth + monthsAhead
+            // Convert to 1-based and handle year wrapping
+            if (targetMonth0Based >= 12) {
+              month = targetMonth0Based - 12 + 1 // Convert to 1-based, wrapped month
+              year = currentYear + 1 // Next year
+            } else {
+              month = targetMonth0Based + 1 // Convert to 1-based (1-12)
+              year = currentYear
+            }
+          }
+          
+          setPredictionMonth(month)
+          setPredictionYear(year)
+          // Save to sessionStorage with user ID
+          if (user?.id) {
+            sessionStorage.setItem('insights_predictions', JSON.stringify(predictionsRes.predictions))
+            sessionStorage.setItem('insights_prediction_month', month.toString())
+            sessionStorage.setItem('insights_prediction_year', year.toString())
+            sessionStorage.setItem('insights_user_id', user.id)
+          }
         } else {
           // If response structure is different, try to extract predictions
           setPredictions([])
+          setPredictionMonth(null)
+          setPredictionYear(null)
+          setPredictionInsufficientData(null)
           sessionStorage.removeItem('insights_predictions')
         }
       } else {
         setPredictions([])
+        setPredictionMonth(null)
+        setPredictionYear(null)
+        setPredictionInsufficientData(null)
         sessionStorage.removeItem('insights_predictions')
       }
     } catch (error) {
       console.error('Error loading predictions:', error)
       setPredictions([])
+      setPredictionMonth(null)
+      setPredictionYear(null)
+      setPredictionInsufficientData(null)
       sessionStorage.removeItem('insights_predictions')
     } finally {
       setPredictionsLoading(false)
@@ -417,7 +516,7 @@ export function Insights() {
                   tick={{ fill: 'hsl(var(--muted-foreground))' }}
                 />
                 <Tooltip 
-                  formatter={(value) => [`$${Number(value).toFixed(2)}`, 'Amount']}
+                  formatter={(value) => [`₹${Number(value).toFixed(2)}`, 'Amount']}
                   contentStyle={{
                     backgroundColor: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',
@@ -476,7 +575,7 @@ export function Insights() {
               <span className="ml-3 text-muted-foreground">Generating predictions...</span>
             </div>
           )}
-          {!predictionsLoading && predictions.length === 0 && (
+          {!predictionsLoading && predictions.length === 0 && !predictionInsufficientData && (
             <div className="p-6 bg-muted/50 rounded-lg text-center">
               <p className="text-muted-foreground mb-4">
                 Click "Generate Prediction" to get AI-powered spending predictions based on your transaction history.
@@ -486,32 +585,68 @@ export function Insights() {
               </p>
             </div>
           )}
-          {!predictionsLoading && predictions.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-foreground mb-4">
-                Based on your spending patterns, here are the predicted expenses for the upcoming month:
+          {!predictionsLoading && predictionInsufficientData && (
+            <div>
+              <p className="text-black dark:text-foreground leading-relaxed">
+                {predictionInsufficientData}
               </p>
-              <ul className="space-y-2 text-foreground">
-                {predictions.slice(0, 5).map((prediction, index) => (
-                  <li key={index} className="flex items-start">
-                    <span className="mr-2 text-primary font-bold">{index + 1}.</span>
-                    <span>
-                      <span className="font-medium capitalize">{prediction.category}</span>
-                      {' '}spending is predicted to be{' '}
-                      <span className="font-semibold text-primary">
-                        ${Number(prediction.predicted_amount || 0).toFixed(2)}
-                      </span>
-                      {' '}for{' '}
-                      {new Date(prediction.year, prediction.month - 1).toLocaleDateString('en-US', { 
-                        month: 'long', 
-                        year: 'numeric' 
-                      })}.
-                    </span>
-                  </li>
-                ))}
-              </ul>
             </div>
           )}
+          {!predictionsLoading && predictions.length > 0 && (() => {
+            // Filter out predictions with amount 0
+            const filteredPredictions = predictions.filter(p => Number(p.predicted_amount || 0) > 0)
+            
+            if (filteredPredictions.length === 0) {
+              return (
+                <div>
+                  <p className="text-black dark:text-foreground leading-relaxed">
+                    No predictions available with non-zero amounts.
+                  </p>
+                </div>
+              )
+            }
+            
+            return (
+              <div className="space-y-3">
+                <p className="text-foreground mb-4">
+                  Based on your spending patterns, here are the predicted expenses for the upcoming month:
+                </p>
+                <ul className="space-y-2 text-foreground">
+                  {filteredPredictions.map((prediction, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                      <span>
+                        <span className="font-medium capitalize">{prediction.category}</span>
+                        {' '}spending is predicted to be{' '}
+                        <span className="font-semibold text-primary">
+                          ₹{Number(prediction.predicted_amount || 0).toFixed(2)}
+                        </span>
+                        {(() => {
+                          const month = predictionMonth || prediction.month
+                          const year = predictionYear || prediction.year
+                          if (month && year && !isNaN(month) && !isNaN(year) && month >= 1 && month <= 12) {
+                            const date = new Date(year, month - 1)
+                            if (!isNaN(date.getTime())) {
+                              return (
+                                <>
+                                  {' '}for{' '}
+                                  {date.toLocaleDateString('en-US', { 
+                                    month: 'long', 
+                                    year: 'numeric' 
+                                  })}.
+                                </>
+                              )
+                            }
+                          }
+                          return null
+                        })()}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
 
@@ -550,85 +685,97 @@ export function Insights() {
         </CardHeader>
         <CardContent>
           {adviceLoading && streamingAdvice && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="mb-2 flex items-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
                 <span className="text-sm text-muted-foreground">Generating advice...</span>
               </div>
               
               {streamingAdvice.summary && (
-                <div className="mb-4">
-                  <p className="text-black dark:text-foreground leading-relaxed">
-                    {streamingAdvice.summary}
-                    <span className="animate-pulse">▋</span>
-                  </p>
+                <p className="text-foreground mb-4">
+                  {streamingAdvice.summary}
+                  <span className="animate-pulse">▋</span>
+                </p>
+              )}
+
+              {streamingAdvice.concerns && streamingAdvice.concerns.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Key Concerns:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {streamingAdvice.concerns.map((concern, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>
+                          {concern}
+                          {index === streamingAdvice.concerns!.length - 1 && <span className="animate-pulse">▋</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
-              <div className="space-y-4">
-                {streamingAdvice.concerns && streamingAdvice.concerns.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Key Concerns</h4>
-                    <div className="space-y-2">
-                      {streamingAdvice.concerns.map((concern, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          {concern}
-                          {index === streamingAdvice.concerns!.length - 1 && <span className="animate-pulse">▋</span>}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {streamingAdvice.recommendations && streamingAdvice.recommendations.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Top Recommendations</h4>
-                    <div className="space-y-3">
-                      {streamingAdvice.recommendations.map((rec, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          <span className="font-medium">{index + 1}. {rec.title}:</span>
-                          {' '}
-                          {rec.description}
+              {streamingAdvice.recommendations && streamingAdvice.recommendations.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Top Recommendations:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {streamingAdvice.recommendations.map((rec, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>
+                          <span className="font-medium">{rec.title || `Recommendation ${index + 1}`}</span>
+                          {rec.description && (
+                            <>
+                              {': '}
+                              {rec.description}
+                            </>
+                          )}
                           {rec.potential_savings && (
                             <span className="ml-1">
                               (Potential savings: {rec.potential_savings})
                             </span>
                           )}
                           {index === streamingAdvice.recommendations!.length - 1 && <span className="animate-pulse">▋</span>}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {streamingAdvice.positive_feedback && streamingAdvice.positive_feedback.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Positive Highlights</h4>
-                    <div className="space-y-2">
-                      {streamingAdvice.positive_feedback.map((feedback, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
+              {streamingAdvice.positive_feedback && streamingAdvice.positive_feedback.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Positive Highlights:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {streamingAdvice.positive_feedback.map((feedback, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>
                           {feedback}
                           {index === streamingAdvice.positive_feedback!.length - 1 && <span className="animate-pulse">▋</span>}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {streamingAdvice.next_steps && streamingAdvice.next_steps.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Next Steps</h4>
-                    <div className="space-y-2">
-                      {streamingAdvice.next_steps.map((step, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          {index + 1}. {step}
+              {streamingAdvice.next_steps && streamingAdvice.next_steps.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Next Steps:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {streamingAdvice.next_steps.map((step, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>
+                          {step}
                           {index === streamingAdvice.next_steps!.length - 1 && <span className="animate-pulse">▋</span>}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
           {adviceLoading && !streamingAdvice && !streamingText && (
@@ -656,23 +803,14 @@ export function Insights() {
             </div>
           )}
           {!adviceLoading && safeAdvice && (safeAdvice as any).insufficient_data && (
-            <div className="p-6 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-              <div className="flex items-start">
-                <Info className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mr-3 mt-0.5" />
-                <div>
-                  <h4 className="font-medium text-yellow-900 dark:text-yellow-100 mb-2">Insufficient Data</h4>
-                  <p className="text-yellow-800 dark:text-yellow-200">
-                    {safeAdvice.summary || 'We need at least 10 transactions to generate accurate financial advice.'}
-                  </p>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
-                    Add more transactions to unlock personalized AI financial advice.
-                  </p>
-                </div>
-              </div>
+            <div>
+              <p className="text-black dark:text-foreground leading-relaxed">
+                {safeAdvice.summary || 'We need at least 10 transactions to generate accurate financial advice. Add more transactions to unlock personalized AI financial advice.'}
+              </p>
             </div>
           )}
           {!adviceLoading && safeAdvice && !(safeAdvice as any).insufficient_data && (
-            <div>
+            <div className="space-y-3">
               <div className="flex items-center justify-end mb-4">
                 {safeAdvice.confidence_score > 0 && (
                   <Badge variant="secondary">
@@ -680,88 +818,94 @@ export function Insights() {
                   </Badge>
                 )}
               </div>
-            <div className="space-y-4">
+              
               {safeAdvice.summary && (
-                <div className="mb-4">
-                  <p className="text-black dark:text-foreground leading-relaxed">{safeAdvice.summary}</p>
+                <p className="text-foreground mb-4">
+                  {safeAdvice.summary}
+                </p>
+              )}
+
+              {safeAdvice.concerns && safeAdvice.concerns.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Key Concerns:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {safeAdvice.concerns.slice(0, 3).map((concern, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>{concern}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
-              {/* Combine all advice into 4-5 key points */}
-              <div className="space-y-4">
-                {safeAdvice.concerns && safeAdvice.concerns.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Key Concerns</h4>
-                    <div className="space-y-2">
-                      {safeAdvice.concerns.slice(0, 3).map((concern, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          {concern}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {safeAdvice.recommendations && safeAdvice.recommendations.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Top Recommendations</h4>
-                    <div className="space-y-3">
-                      {safeAdvice.recommendations.slice(0, 5).map((rec, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          <span className="font-medium">{index + 1}. {rec.title || `Recommendation ${index + 1}`}:</span>
-                          {' '}
-                          {rec.description}
+              {safeAdvice.recommendations && safeAdvice.recommendations.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Top Recommendations:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {safeAdvice.recommendations.slice(0, 5).map((rec, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>
+                          <span className="font-medium">{rec.title || `Recommendation ${index + 1}`}</span>
+                          {rec.description && (
+                            <>
+                              {': '}
+                              {rec.description}
+                            </>
+                          )}
                           {rec.potential_savings && (
                             <span className="ml-1">
                               (Potential savings: {rec.potential_savings})
                             </span>
                           )}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {safeAdvice.positive_feedback && safeAdvice.positive_feedback.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Positive Highlights</h4>
-                    <div className="space-y-2">
-                      {safeAdvice.positive_feedback.slice(0, 3).map((feedback, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          {feedback}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              {safeAdvice.positive_feedback && safeAdvice.positive_feedback.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Positive Highlights:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {safeAdvice.positive_feedback.slice(0, 3).map((feedback, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>{feedback}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {safeAdvice.next_steps && safeAdvice.next_steps.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-black dark:text-foreground mb-2">Next Steps</h4>
-                    <div className="space-y-2">
-                      {safeAdvice.next_steps.slice(0, 5).map((step, index) => (
-                        <p key={index} className="text-black dark:text-foreground leading-relaxed">
-                          {index + 1}. {step}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              {safeAdvice.next_steps && safeAdvice.next_steps.length > 0 && (
+                <div>
+                  <p className="text-foreground mb-2">Next Steps:</p>
+                  <ul className="space-y-2 text-foreground">
+                    {safeAdvice.next_steps.slice(0, 5).map((step, index) => (
+                      <li key={index} className="flex items-start">
+                        <span className="mr-2 text-primary font-bold">{index + 1}.</span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {/* Show message if advice exists but no sections have data */}
-                {!safeAdvice.summary && 
-                 (!safeAdvice.concerns || safeAdvice.concerns.length === 0) && 
-                 (!safeAdvice.recommendations || safeAdvice.recommendations.length === 0) && 
-                 (!safeAdvice.positive_feedback || safeAdvice.positive_feedback.length === 0) &&
-                 (!safeAdvice.next_steps || safeAdvice.next_steps.length === 0) && (
-                  <div className="p-4 bg-muted/50 rounded-lg text-center">
-                    <p className="text-muted-foreground">
-                      AI advice is being generated. Please check back in a moment or refresh the page.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+              {/* Show message if advice exists but no sections have data */}
+              {!safeAdvice.summary && 
+               (!safeAdvice.concerns || safeAdvice.concerns.length === 0) && 
+               (!safeAdvice.recommendations || safeAdvice.recommendations.length === 0) && 
+               (!safeAdvice.positive_feedback || safeAdvice.positive_feedback.length === 0) &&
+               (!safeAdvice.next_steps || safeAdvice.next_steps.length === 0) && (
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <p className="text-muted-foreground">
+                    AI advice is being generated. Please check back in a moment or refresh the page.
+                  </p>
+                </div>
+              )}
             </div>
           )}
           </CardContent>

@@ -591,6 +591,7 @@ router.post('/process-recurring', authenticateToken, async (req, res) => {
 router.get('/recurring', authenticateToken, async (req, res) => {
   try {
     const { account_id } = req.query;
+    const now = new Date();
     
     let query = db('recurring_transactions')
       .leftJoin('accounts', 'recurring_transactions.account_id', 'accounts.id')
@@ -609,6 +610,63 @@ router.get('/recurring', authenticateToken, async (req, res) => {
     const recurringTransactions = await query
       .orderBy('recurring_transactions.is_active', 'desc')
       .orderBy('recurring_transactions.created_at', 'desc');
+
+    // Fix any recurring transactions with future last_processed dates
+    for (const recurring of recurringTransactions) {
+      if (recurring.last_processed) {
+        const lastProcessedDate = new Date(recurring.last_processed);
+        // If last_processed is in the future, find the actual last processed date from transactions
+        if (lastProcessedDate > now) {
+          console.log(`Fixing future last_processed date for recurring transaction ${recurring.id}: ${recurring.last_processed}`);
+          
+          // Find the most recent transaction created from this recurring transaction
+          // that has a date in the past (not future)
+          const lastValidTransaction = await db('transactions')
+            .where({
+              user_id: recurring.user_id,
+              account_id: recurring.account_id,
+              recurring_transaction_id: recurring.id
+            })
+            .where('date', '<=', now.toISOString().split('T')[0]) // Only past/current dates
+            .orderBy('date', 'desc')
+            .first();
+          
+          let correctLastProcessed = null;
+          if (lastValidTransaction) {
+            correctLastProcessed = lastValidTransaction.date;
+          }
+          
+          // Update the database with the correct last_processed date
+          await db('recurring_transactions')
+            .where({ id: recurring.id, user_id: req.user.userId })
+            .update({ last_processed: correctLastProcessed });
+          
+          // Update the object in the response
+          recurring.last_processed = correctLastProcessed;
+        }
+      } else {
+        // If last_processed is null, try to find the most recent transaction to set it
+        const lastValidTransaction = await db('transactions')
+          .where({
+            user_id: recurring.user_id,
+            account_id: recurring.account_id,
+            recurring_transaction_id: recurring.id
+          })
+          .where('date', '<=', now.toISOString().split('T')[0]) // Only past/current dates
+          .orderBy('date', 'desc')
+          .first();
+        
+        if (lastValidTransaction) {
+          // Update the database with the found last_processed date
+          await db('recurring_transactions')
+            .where({ id: recurring.id, user_id: req.user.userId })
+            .update({ last_processed: lastValidTransaction.date });
+          
+          // Update the object in the response
+          recurring.last_processed = lastValidTransaction.date;
+        }
+      }
+    }
 
     res.json({ recurring_transactions: recurringTransactions });
   } catch (error) {

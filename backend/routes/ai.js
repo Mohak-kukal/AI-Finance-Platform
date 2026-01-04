@@ -126,8 +126,71 @@ router.get('/predict', authenticateToken, async (req, res) => {
       target_year: parseInt(targetYear)
     });
 
-    // Store predictions in database
+    // Get active recurring transactions that should occur in the target month
+    const targetDate = new Date(parseInt(targetYear), parseInt(targetMonth) - 1, 1); // First day of target month
+    const targetDateEnd = new Date(parseInt(targetYear), parseInt(targetMonth), 0); // Last day of target month
+    
+    const activeRecurringTransactions = await db('recurring_transactions')
+      .where('user_id', req.user.userId)
+      .where('is_active', true)
+      .where('is_expense', true) // Only expenses for spending predictions
+      .where(function() {
+        // Start date should be before or in target month
+        this.where('start_date', '<=', targetDateEnd.toISOString().split('T')[0]);
+      })
+      .where(function() {
+        // End date should be null or after target month start
+        this.whereNull('end_date')
+            .orWhere('end_date', '>=', targetDate.toISOString().split('T')[0]);
+      });
+
+    // Create a map of predictions by category for easy lookup and modification
+    const predictionsMap = new Map();
     if (response.data.predictions && response.data.predictions.length > 0) {
+      response.data.predictions.forEach(pred => {
+        predictionsMap.set(pred.category, pred.predicted_amount);
+      });
+    }
+
+    // Add recurring transaction amounts to predictions
+    for (const recurring of activeRecurringTransactions) {
+      // Check if this recurring transaction should occur in the target month
+      // by checking if it hasn't been processed for this month yet
+      const shouldOccur = !recurring.last_processed || 
+        (() => {
+          const lastProcessed = new Date(recurring.last_processed);
+          const lastProcessedYear = lastProcessed.getFullYear();
+          const lastProcessedMonth = lastProcessed.getMonth() + 1;
+          // Should occur if last_processed is before target month
+          return lastProcessedYear < parseInt(targetYear) || 
+                 (lastProcessedYear === parseInt(targetYear) && lastProcessedMonth < parseInt(targetMonth));
+        })();
+
+      if (shouldOccur) {
+        const category = recurring.category || 'Uncategorized';
+        const amount = Math.abs(Number(recurring.amount || 0)); // Ensure positive for expenses
+        
+        // Add to existing category or create new entry
+        if (predictionsMap.has(category)) {
+          predictionsMap.set(category, predictionsMap.get(category) + amount);
+        } else {
+          predictionsMap.set(category, amount);
+        }
+      }
+    }
+
+    // Convert map back to predictions array
+    const finalPredictions = Array.from(predictionsMap.entries()).map(([category, amount]) => ({
+      category: category,
+      predicted_amount: amount,
+      confidence: 0.8
+    }));
+
+    // Update response with final predictions
+    response.data.predictions = finalPredictions;
+
+    // Store predictions in database
+    if (finalPredictions.length > 0) {
       // Clear old predictions for this period
       await db('predictions')
         .where({
@@ -138,7 +201,7 @@ router.get('/predict', authenticateToken, async (req, res) => {
         .del();
 
       // Insert new predictions
-      const predictionRecords = response.data.predictions.map(pred => ({
+      const predictionRecords = finalPredictions.map(pred => ({
         user_id: req.user.userId,
         category: pred.category,
         predicted_amount: pred.predicted_amount,
